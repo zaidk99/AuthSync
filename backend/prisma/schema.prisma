@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────── ENUMS ─────────────
+
+enum Role {
+  admin
+  author
+}
+
+enum TicketStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum Priority {
+  Critical
+  High
+  Medium
+  Low
+}
+
+enum SetBy {
+  ai
+  admin
+}
+
+enum AiState {
+  pending
+  ok
+  failed
+}
+
+enum Visibility {
+  public
+  internal
+}
+
+enum AiPurpose {
+  classify
+  draft
+}
+
+enum TicketCategory {
+  royalty_payments    @map("Royalty & Payments")
+  isbn_metadata       @map("ISBN & Metadata Issues")
+  printing_quality    @map("Printing & Quality")
+  distribution        @map("Distribution & Availability")
+  book_status         @map("Book Status & Production Updates")
+  general             @map("General Inquiry")
+}
+
+// ───────────── MODELS ─────────────
+
+model Author {
+  author_id   String   @id
+  name        String
+  email       String   @unique
+  phone       String
+  city        String
+  joined_date DateTime @db.Date
+
+  books   Book[]
+  tickets Ticket[]
+  user    User?
+
+  @@map("authors")
+}
+
+model Book {
+  book_id                  String    @id
+  author_id                String
+  author                   Author    @relation(fields: [author_id], references: [author_id])
+  title                    String
+  isbn                     String
+  genre                    String
+  publication_date         DateTime? @db.Date
+  status                   String
+  mrp                      Int?
+  author_royalty_per_copy  Int?
+  total_copies_sold        Int
+  total_royalty_earned     Int
+  royalty_paid             Int
+  royalty_pending          Int
+  last_royalty_payout_date DateTime? @db.Date
+  print_partner            String?
+
+  platforms BookPlatform[]
+  tickets   Ticket[]
+
+  @@index([author_id])
+  @@map("books")
+}
+
+model BookPlatform {
+  book_id  String
+  platform String
+  book     Book   @relation(fields: [book_id], references: [book_id], onDelete: Cascade)
+
+  @@id([book_id, platform])
+  @@index([platform])
+  @@map("book_platforms")
+}
+
+model User {
+  user_id       BigInt  @id @default(autoincrement())
+  email         String  @unique
+  name          String
+  role          Role
+  password_hash String
+  author_id     String? @unique
+  author        Author? @relation(fields: [author_id], references: [author_id])
+  assigned_tickets Ticket[]
+  messages         TicketMessage[]
+
+  @@map("users")
+}
+
+model Ticket {
+  ticket_id        BigInt       @id @default(autoincrement())
+  author_id        String
+  author           Author       @relation(fields: [author_id], references: [author_id])
+  book_id          String?
+  book             Book?        @relation(fields: [book_id], references: [book_id])
+  subject          String
+  description      String
+  status           TicketStatus @default(open)
+  category         TicketCategory?
+  category_set_by  SetBy?
+  priority         Priority?
+  priority_set_by  SetBy?
+  ai_state         AiState      @default(pending)
+  assigned_user_id BigInt?
+  assigned_user    User?        @relation(fields: [assigned_user_id], references: [user_id])
+  draft_body       String?
+  draft_updated_at DateTime?    @db.Timestamptz(3)
+  created_at       DateTime     @default(now()) @db.Timestamptz(3)
+  updated_at       DateTime     @updatedAt @db.Timestamptz(3)
+
+  messages TicketMessage[]
+  ai_calls AiCall[]
+
+  @@index([author_id])
+  @@index([book_id])
+  @@index([assigned_user_id])
+  @@index([status])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  message_id     BigInt     @id @default(autoincrement())
+  ticket_id      BigInt
+  ticket         Ticket     @relation(fields: [ticket_id], references: [ticket_id], onDelete: Cascade)
+  sender_user_id BigInt
+  sender         User       @relation(fields: [sender_user_id], references: [user_id])
+  body           String
+  visibility     Visibility
+  created_at     DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@index([ticket_id])
+  @@index([sender_user_id])
+  @@map("ticket_messages")
+}
+
+model AiCall {
+  ai_call_id        BigInt    @id @default(autoincrement())
+  ticket_id         BigInt
+  ticket            Ticket    @relation(fields: [ticket_id], references: [ticket_id], onDelete: Cascade)
+  purpose           AiPurpose
+  model             String
+  prompt_tokens     Int?
+  completion_tokens Int?
+  success           Boolean
+  error_message     String?
+  created_at        DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([ticket_id])
+  @@map("ai_calls")
+}
